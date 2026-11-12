@@ -20,9 +20,8 @@ class Ball(GameObject):
     def __init__(self, canvas, x, y):
         self.radius = 8
         self.direction = [1, -1]
-        self.speed = 7
+        self.speed = 6  # Kecepatan bola diatur seimbang agar presisi
         
-        # Bola dengan efek bayangan/glow modern
         self.shadow = canvas.create_oval(
             x - self.radius - 2, y - self.radius - 2,
             x + self.radius + 2, y + self.radius + 2,
@@ -50,10 +49,8 @@ class Ball(GameObject):
         coords = self.get_position()
         width = self.canvas.winfo_width()
         
-        # Pantulan dinding kiri/kanan
         if coords[0] <= 15 or coords[2] >= width - 15:
             self.direction[0] *= -1
-        # Pantulan dinding atas (di bawah HUD)
         if coords[1] <= 60:
             self.direction[1] *= -1
             
@@ -83,11 +80,10 @@ class Ball(GameObject):
 
 class Paddle(GameObject):
     def __init__(self, canvas, x, y):
-        self.width = 100
+        self.width = 110
         self.height = 12
         self.ball = None
         
-        # Paddle dengan sudut melengkung modern (menggunakan polygon)
         item = canvas.create_rectangle(
             x - self.width / 2, y - self.height / 2,
             x + self.width / 2, y + self.height / 2,
@@ -98,7 +94,21 @@ class Paddle(GameObject):
     def set_ball(self, ball):
         self.ball = ball
 
+    def move_to(self, new_x):
+        """Memungkinkan paddle mengikuti posisi kursor mouse secara interaktif"""
+        coords = self.get_position()
+        width = self.canvas.winfo_width()
+        current_center_x = (coords[0] + coords[2]) / 2
+        offset = new_x - current_center_x
+        
+        # Batasi agar tidak keluar frame
+        if coords[0] + offset >= 15 and coords[2] + offset <= width - 15:
+            super(Paddle, self).move(offset, 0)
+            if self.ball is not None:
+                self.ball.move(offset, 0)
+
     def move(self, offset):
+        """Kontrol alternatif menggunakan keyboard (A/D atau Panah)"""
         coords = self.get_position()
         width = self.canvas.winfo_width()
         if coords[0] + offset >= 15 and coords[2] + offset <= width - 15:
@@ -108,7 +118,6 @@ class Paddle(GameObject):
 
 
 class Brick(GameObject):
-    # Palet warna modern (Neon/Pastel dark mode)
     COLORS = {1: '#10b981', 2: '#f59e0b', 3: '#6366f1'}
 
     def __init__(self, canvas, x, y, hits):
@@ -140,7 +149,6 @@ class Game(tk.Frame):
         self.width = 650
         self.height = 480
         
-        # Tema latar belakang gelap modern
         self.canvas = tk.Canvas(
             self, bg='#0f172a',
             width=self.width, height=self.height,
@@ -149,7 +157,6 @@ class Game(tk.Frame):
         self.canvas.pack()
         self.pack()
 
-        # Garis pembatas atas area bermain
         self.canvas.create_line(15, 50, self.width - 15, 50, fill='#334155', width=2)
 
         self.items = {}
@@ -157,7 +164,6 @@ class Game(tk.Frame):
         self.paddle = Paddle(self.canvas, self.width / 2, 420)
         self.items[self.paddle.item] = self.paddle
         
-        # Spawn Bricks dengan jarak rapi
         for r, hits_val in enumerate([3, 2, 1]):
             for x in range(25, self.width - 25, 75):
                 self.add_brick(x + 35, 90 + (r * 25), hits_val)
@@ -169,11 +175,14 @@ class Game(tk.Frame):
         self.setup_game()
         self.canvas.focus_set()
         
-        # Kontrol Keyboard (Panah Kiri/Kanan & A/D)
-        self.canvas.bind('<Left>', lambda _: self.paddle.move(-15))
-        self.canvas.bind('<Right>', lambda _: self.paddle.move(15))
-        self.canvas.bind('<a>', lambda _: self.paddle.move(-15))
-        self.canvas.bind('<d>', lambda _: self.paddle.move(15))
+        # Kontrol Keyboard dipercepat responsnya
+        self.canvas.bind('<Left>', lambda _: self.paddle.move(-20))
+        self.canvas.bind('<Right>', lambda _: self.paddle.move(20))
+        self.canvas.bind('<a>', lambda _: self.paddle.move(-20))
+        self.canvas.bind('<d>', lambda _: self.paddle.move(20))
+        
+        # Interaktif Mouse: Gerakkan paddle mengikuti kursor secara mulus
+        self.canvas.bind('<Motion>', lambda event: self.paddle.move_to(event.x))
 
     def setup_game(self):
         self.add_ball()
@@ -242,15 +251,14 @@ class Game(tk.Frame):
                 self.after(1000, self.setup_game)
         else:
             self.ball.update()
-            # Sistem skor bertambah setiap balok hancur (opsional pelacak)
-            self.after(20, self.game_loop)
+            # FPS ditingkatkan dengan memperkecil jeda loop dari 20ms ke 15ms (~67 FPS)
+            self.after(15, self.game_loop)
 
     def check_collisions(self):
         ball_coords = self.ball.get_position()
         items = self.canvas.find_overlapping(*ball_coords)
         objects = [self.items[x] for x in items if x in self.items]
         
-        # Tambah skor otomatis ketika bola mengenai brick
         for obj in objects:
             if isinstance(obj, Brick):
                 self.score += 10
