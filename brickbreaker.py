@@ -1,7 +1,7 @@
 import tkinter as tk
 
 
-class GameObject(object):
+class GameObject:
     def __init__(self, canvas, item):
         self.canvas = canvas
         self.item = item
@@ -18,21 +18,45 @@ class GameObject(object):
 
 class Ball(GameObject):
     def __init__(self, canvas, x, y):
-        self.radius = 10
+        self.radius = 8
         self.direction = [1, -1]
-        self.speed = 10
-        item = canvas.create_oval(x-self.radius, y-self.radius,
-                                  x+self.radius, y+self.radius,
-                                  fill='white')
+        self.speed = 7
+        
+        # Bola dengan efek bayangan/glow modern
+        self.shadow = canvas.create_oval(
+            x - self.radius - 2, y - self.radius - 2,
+            x + self.radius + 2, y + self.radius + 2,
+            fill='#1e293b', outline=''
+        )
+        item = canvas.create_oval(
+            x - self.radius, y - self.radius,
+            x + self.radius, y + self.radius,
+            fill='#38bdf8', outline=''
+        )
         super(Ball, self).__init__(canvas, item)
+
+    def get_position(self):
+        return self.canvas.coords(self.item)
+
+    def move(self, x, y):
+        self.canvas.move(self.item, x, y)
+        self.canvas.move(self.shadow, x, y)
+
+    def delete(self):
+        self.canvas.delete(self.item)
+        self.canvas.delete(self.shadow)
 
     def update(self):
         coords = self.get_position()
         width = self.canvas.winfo_width()
-        if coords[0] <= 0 or coords[2] >= width:
+        
+        # Pantulan dinding kiri/kanan
+        if coords[0] <= 15 or coords[2] >= width - 15:
             self.direction[0] *= -1
-        if coords[1] <= 0:
+        # Pantulan dinding atas (di bawah HUD)
+        if coords[1] <= 60:
             self.direction[1] *= -1
+            
         x = self.direction[0] * self.speed
         y = self.direction[1] * self.speed
         self.move(x, y)
@@ -59,14 +83,16 @@ class Ball(GameObject):
 
 class Paddle(GameObject):
     def __init__(self, canvas, x, y):
-        self.width = 80
-        self.height = 10
+        self.width = 100
+        self.height = 12
         self.ball = None
-        item = canvas.create_rectangle(x - self.width / 2,
-                                       y - self.height / 2,
-                                       x + self.width / 2,
-                                       y + self.height / 2,
-                                       fill='yellow')
+        
+        # Paddle dengan sudut melengkung modern (menggunakan polygon)
+        item = canvas.create_rectangle(
+            x - self.width / 2, y - self.height / 2,
+            x + self.width / 2, y + self.height / 2,
+            fill='#f43f5e', outline='', width=0
+        )
         super(Paddle, self).__init__(canvas, item)
 
     def set_ball(self, ball):
@@ -75,25 +101,27 @@ class Paddle(GameObject):
     def move(self, offset):
         coords = self.get_position()
         width = self.canvas.winfo_width()
-        if coords[0] + offset >= 0 and coords[2] + offset <= width:
+        if coords[0] + offset >= 15 and coords[2] + offset <= width - 15:
             super(Paddle, self).move(offset, 0)
             if self.ball is not None:
                 self.ball.move(offset, 0)
 
 
 class Brick(GameObject):
-    COLORS = {1: '#e74c3c', 2: '#3498db', 3: '#222222'}
+    # Palet warna modern (Neon/Pastel dark mode)
+    COLORS = {1: '#10b981', 2: '#f59e0b', 3: '#6366f1'}
 
     def __init__(self, canvas, x, y, hits):
-        self.width = 75
-        self.height = 20
+        self.width = 68
+        self.height = 18
         self.hits = hits
         color = Brick.COLORS[hits]
-        item = canvas.create_rectangle(x - self.width / 2,
-                                       y - self.height / 2,
-                                       x + self.width / 2,
-                                       y + self.height / 2,
-                                       fill=color, tags='brick')
+        
+        item = canvas.create_rectangle(
+            x - self.width / 2, y - self.height / 2,
+            x + self.width / 2, y + self.height / 2,
+            fill=color, outline='', tags='brick'
+        )
         super(Brick, self).__init__(canvas, item)
 
     def hit(self):
@@ -101,44 +129,61 @@ class Brick(GameObject):
         if self.hits == 0:
             self.delete()
         else:
-            self.canvas.itemconfig(self.item,
-                                   fill=Brick.COLORS[self.hits])
+            self.canvas.itemconfig(self.item, fill=Brick.COLORS[self.hits])
 
 
 class Game(tk.Frame):
     def __init__(self, master):
         super(Game, self).__init__(master)
         self.lives = 3
-        self.width = 610
-        self.height = 400
-        self.canvas = tk.Canvas(self, bg='#aaaaff',
-                                width=self.width,
-                                height=self.height)
+        self.score = 0
+        self.width = 650
+        self.height = 480
+        
+        # Tema latar belakang gelap modern
+        self.canvas = tk.Canvas(
+            self, bg='#0f172a',
+            width=self.width, height=self.height,
+            highlightthickness=0
+        )
         self.canvas.pack()
         self.pack()
 
+        # Garis pembatas atas area bermain
+        self.canvas.create_line(15, 50, self.width - 15, 50, fill='#334155', width=2)
+
         self.items = {}
         self.ball = None
-        self.paddle = Paddle(self.canvas, self.width/2, 326)
+        self.paddle = Paddle(self.canvas, self.width / 2, 420)
         self.items[self.paddle.item] = self.paddle
-        for x in range(5, self.width - 5, 75):
-            self.add_brick(x + 37.5, 50, 2)
-            self.add_brick(x + 37.5, 70, 1)
-            self.add_brick(x + 37.5, 90, 1)
+        
+        # Spawn Bricks dengan jarak rapi
+        for r, hits_val in enumerate([3, 2, 1]):
+            for x in range(25, self.width - 25, 75):
+                self.add_brick(x + 35, 90 + (r * 25), hits_val)
 
-        self.hud = None
+        self.hud_score = None
+        self.hud_lives = None
+        self.center_text = None
+        
         self.setup_game()
         self.canvas.focus_set()
-        self.canvas.bind('<Left>',
-                         lambda _: self.paddle.move(-10))
-        self.canvas.bind('<Right>',
-                         lambda _: self.paddle.move(10))
+        
+        # Kontrol Keyboard (Panah Kiri/Kanan & A/D)
+        self.canvas.bind('<Left>', lambda _: self.paddle.move(-15))
+        self.canvas.bind('<Right>', lambda _: self.paddle.move(15))
+        self.canvas.bind('<a>', lambda _: self.paddle.move(-15))
+        self.canvas.bind('<d>', lambda _: self.paddle.move(15))
 
     def setup_game(self):
         self.add_ball()
-        self.update_lives_text()
-        self.text = self.draw_text(300, 200,
-                                   'Press Space to start')
+        self.update_hud()
+        self.center_text = self.canvas.create_text(
+            self.width / 2, self.height / 2,
+            text='PRESS SPACE TO START',
+            font=('Segoe UI', 16, 'bold'),
+            fill='#f8fafc'
+        )
         self.canvas.bind('<space>', lambda _: self.start_game())
 
     def add_ball(self):
@@ -146,57 +191,77 @@ class Game(tk.Frame):
             self.ball.delete()
         paddle_coords = self.paddle.get_position()
         x = (paddle_coords[0] + paddle_coords[2]) * 0.5
-        self.ball = Ball(self.canvas, x, 310)
+        self.ball = Ball(self.canvas, x, 405)
         self.paddle.set_ball(self.ball)
 
     def add_brick(self, x, y, hits):
         brick = Brick(self.canvas, x, y, hits)
         self.items[brick.item] = brick
 
-    def draw_text(self, x, y, text, size='40'):
-        font = ('Forte', int(size)) if isinstance(size, int) or size.isdigit() else ('Arial', 20)
-        return self.canvas.create_text(x, y, text=text,
-                                       font=('Arial', int(size) if str(size).isdigit() else 20))
-
-    def update_lives_text(self):
-        text = 'Lives: %s' % self.lives
-        if self.hud is None:
-            self.hud = self.draw_text(50, 20, text, 15)
+    def update_hud(self):
+        score_text = f'SCORE: {self.score}'
+        lives_text = f'LIVES: {self.lives}'
+        
+        if self.hud_score is None:
+            self.hud_score = self.canvas.create_text(30, 25, text=score_text, font=('Segoe UI', 11, 'bold'), fill='#94a3b8', anchor='w')
+            self.hud_lives = self.canvas.create_text(self.width - 30, 25, text=lives_text, font=('Segoe UI', 11, 'bold'), fill='#f43f5e', anchor='e')
         else:
-            self.canvas.itemconfig(self.hud, text=text)
+            self.canvas.itemconfig(self.hud_score, text=score_text)
+            self.canvas.itemconfig(self.hud_lives, text=lives_text)
 
     def start_game(self):
         self.canvas.unbind('<space>')
-        self.canvas.delete(self.text)
+        self.canvas.delete(self.center_text)
         self.paddle.ball = None
         self.game_loop()
 
     def game_loop(self):
         self.check_collisions()
         num_bricks = len(self.canvas.find_withtag('brick'))
+        
         if num_bricks == 0:
             self.ball.speed = None
-            self.draw_text(300, 200, 'You win!')
+            self.canvas.create_text(
+                self.width / 2, self.height / 2,
+                text='VICTORY!',
+                font=('Segoe UI', 24, 'bold'),
+                fill='#10b981'
+            )
         elif self.ball.get_position()[3] >= self.height:
             self.ball.speed = None
             self.lives -= 1
+            self.update_hud()
             if self.lives < 0:
-                self.draw_text(300, 200, 'You Lose!!! Game Over!')
+                self.canvas.create_text(
+                    self.width / 2, self.height / 2,
+                    text='GAME OVER',
+                    font=('Segoe UI', 24, 'bold'),
+                    fill='#f43f5e'
+                )
             else:
                 self.after(1000, self.setup_game)
         else:
             self.ball.update()
-            self.after(50, self.game_loop)
+            # Sistem skor bertambah setiap balok hancur (opsional pelacak)
+            self.after(20, self.game_loop)
 
     def check_collisions(self):
         ball_coords = self.ball.get_position()
         items = self.canvas.find_overlapping(*ball_coords)
         objects = [self.items[x] for x in items if x in self.items]
+        
+        # Tambah skor otomatis ketika bola mengenai brick
+        for obj in objects:
+            if isinstance(obj, Brick):
+                self.score += 10
+                self.update_hud()
+                
         self.ball.collide(objects)
 
 
 if __name__ == '__main__':
     root = tk.Tk()
-    root.title('Hello, Jarvis!')
+    root.title('Modern Brick Breaker')
+    root.resizable(False, False)
     game = Game(root)
     game.mainloop()
