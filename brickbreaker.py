@@ -1,4 +1,6 @@
 import tkinter as tk
+import math
+import random
 
 
 class GameObject:
@@ -19,9 +21,11 @@ class GameObject:
 class Ball(GameObject):
     def __init__(self, canvas, x, y):
         self.radius = 8
-        self.direction = [1, -1]
-        self.speed = 6  # Kecepatan bola diatur seimbang agar presisi
+        self.dx = 5
+        self.dy = -5
+        self.speed = 7
         
+        # Efek Glow / Bayangan Bola
         self.shadow = canvas.create_oval(
             x - self.radius - 2, y - self.radius - 2,
             x + self.radius + 2, y + self.radius + 2,
@@ -46,36 +50,49 @@ class Ball(GameObject):
         self.canvas.delete(self.shadow)
 
     def update(self):
+        self.move(self.dx, self.speed * (self.dy / abs(self.dy) if self.dy != 0 else -1))
         coords = self.get_position()
         width = self.canvas.winfo_width()
         
-        if coords[0] <= 15 or coords[2] >= width - 15:
-            self.direction[0] *= -1
-        if coords[1] <= 60:
-            self.direction[1] *= -1
+        # Pantulan dinding kiri/kanan
+        if coords[0] <= 15:
+            self.dx = abs(self.dx)
+        elif coords[2] >= width - 15:
+            self.dx = -abs(self.dx)
             
-        x = self.direction[0] * self.speed
-        y = self.direction[1] * self.speed
-        self.move(x, y)
+        # Pantulan dinding atas
+        if coords[1] <= 60:
+            self.dy = abs(self.dy)
+
+    def set_vector(self, dx, dy):
+        length = math.hypot(dx, dy)
+        if length == 0:
+            return
+        self.dx = (dx / length) * self.speed
+        self.dy = (dy / length) * self.speed
 
     def collide(self, game_objects):
         coords = self.get_position()
         x = (coords[0] + coords[2]) * 0.5
-        if len(game_objects) > 1:
-            self.direction[1] *= -1
-        elif len(game_objects) == 1:
-            game_object = game_objects[0]
-            coords = game_object.get_position()
-            if x > coords[2]:
-                self.direction[0] = 1
-            elif x < coords[0]:
-                self.direction[0] = -1
-            else:
-                self.direction[1] *= -1
-
+        
+        hit_brick = False
         for game_object in game_objects:
             if isinstance(game_object, Brick):
                 game_object.hit()
+                hit_brick = True
+
+        if len(game_objects) > 1 or hit_brick:
+            self.dy *= -1
+        elif len(game_objects) == 1:
+            game_object = game_objects[0]
+            if isinstance(game_object, Paddle):
+                paddle_coords = game_object.get_position()
+                paddle_center = (paddle_coords[0] + paddle_coords[2]) / 2
+                offset = x - paddle_center
+                # Pantulan dinamis berdasarkan posisi tumbukan pada paddle
+                self.set_vector(offset * 0.15, -abs(self.dy))
+            else:
+                self.dy *= -1
 
 
 class Paddle(GameObject):
@@ -83,6 +100,8 @@ class Paddle(GameObject):
         self.width = 110
         self.height = 12
         self.ball = None
+        self.velocity = 0
+        self.max_speed = 12
         
         item = canvas.create_rectangle(
             x - self.width / 2, y - self.height / 2,
@@ -94,23 +113,23 @@ class Paddle(GameObject):
     def set_ball(self, ball):
         self.ball = ball
 
+    def update_position(self):
+        coords = self.get_position()
+        width = self.canvas.winfo_width()
+        
+        # Batasan layar agar tidak keluar
+        if coords[0] + self.velocity >= 15 and coords[2] + self.velocity <= width - 15:
+            super(Paddle, self).move(self.velocity, 0)
+            if self.ball is not None and self.ball.get_position()[3] < self.get_position()[1]:
+                self.ball.move(self.velocity, 0)
+
     def move_to(self, new_x):
-        """Memungkinkan paddle mengikuti posisi kursor mouse secara interaktif"""
+        """Membuat paddle bergerak sangat mulus mengikuti kursor mouse"""
         coords = self.get_position()
         width = self.canvas.winfo_width()
         current_center_x = (coords[0] + coords[2]) / 2
         offset = new_x - current_center_x
         
-        # Batasi agar tidak keluar frame
-        if coords[0] + offset >= 15 and coords[2] + offset <= width - 15:
-            super(Paddle, self).move(offset, 0)
-            if self.ball is not None:
-                self.ball.move(offset, 0)
-
-    def move(self, offset):
-        """Kontrol alternatif menggunakan keyboard (A/D atau Panah)"""
-        coords = self.get_position()
-        width = self.canvas.winfo_width()
         if coords[0] + offset >= 15 and coords[2] + offset <= width - 15:
             super(Paddle, self).move(offset, 0)
             if self.ball is not None:
@@ -149,15 +168,25 @@ class Game(tk.Frame):
         self.width = 650
         self.height = 480
         
+        # Canvas dengan tema background gelap luar angkasa / modern night
         self.canvas = tk.Canvas(
-            self, bg='#0f172a',
+            self, bg='#090d16',
             width=self.width, height=self.height,
             highlightthickness=0
         )
         self.canvas.pack()
         self.pack()
 
-        self.canvas.create_line(15, 50, self.width - 15, 50, fill='#334155', width=2)
+        # Generate background bintang-bintang statis agar ada tekstur latar belakang
+        random.seed(42)
+        for _ in range(40):
+            bx = random.randint(20, self.width - 20)
+            by = random.randint(60, self.height - 20)
+            size = random.choice([1, 2])
+            self.canvas.create_oval(bx, by, bx + size, by + size, fill='#1e293b', outline='')
+
+        # Garis pembatas UI atas
+        self.canvas.create_line(15, 50, self.width - 15, 50, fill='#1e293b', width=2)
 
         self.items = {}
         self.ball = None
@@ -175,14 +204,25 @@ class Game(tk.Frame):
         self.setup_game()
         self.canvas.focus_set()
         
-        # Kontrol Keyboard dipercepat responsnya
-        self.canvas.bind('<Left>', lambda _: self.paddle.move(-20))
-        self.canvas.bind('<Right>', lambda _: self.paddle.move(20))
-        self.canvas.bind('<a>', lambda _: self.paddle.move(-20))
-        self.canvas.bind('<d>', lambda _: self.paddle.move(20))
+        # Key bindings untuk gerakan fluid (tekan & lepas)
+        self.canvas.bind('<KeyPress-Left>', lambda _: self.start_move(-1))
+        self.canvas.bind('<KeyRelease-Left>', lambda _: self.stop_move())
+        self.canvas.bind('<KeyPress-Right>', lambda _: self.start_move(1))
+        self.canvas.bind('<KeyRelease-Right>', lambda _: self.stop_move())
         
-        # Interaktif Mouse: Gerakkan paddle mengikuti kursor secara mulus
+        self.canvas.bind('<KeyPress-a>', lambda _: self.start_move(-1))
+        self.canvas.bind('<KeyRelease-a>', lambda _: self.stop_move())
+        self.canvas.bind('<KeyPress-d>', lambda _: self.start_move(1))
+        self.canvas.bind('<KeyRelease-d>', lambda _: self.stop_move())
+        
+        # Mouse movement interaktif super mulus
         self.canvas.bind('<Motion>', lambda event: self.paddle.move_to(event.x))
+
+    def start_move(self, direction):
+        self.paddle.velocity = direction * self.paddle.max_speed
+
+    def stop_move(self):
+        self.paddle.velocity = 0
 
     def setup_game(self):
         self.add_ball()
@@ -225,11 +265,12 @@ class Game(tk.Frame):
         self.game_loop()
 
     def game_loop(self):
+        self.paddle.update_position()
         self.check_collisions()
         num_bricks = len(self.canvas.find_withtag('brick'))
         
         if num_bricks == 0:
-            self.ball.speed = None
+            self.ball.speed = 0
             self.canvas.create_text(
                 self.width / 2, self.height / 2,
                 text='VICTORY!',
@@ -237,7 +278,7 @@ class Game(tk.Frame):
                 fill='#10b981'
             )
         elif self.ball.get_position()[3] >= self.height:
-            self.ball.speed = None
+            self.ball.speed = 0
             self.lives -= 1
             self.update_hud()
             if self.lives < 0:
@@ -251,8 +292,8 @@ class Game(tk.Frame):
                 self.after(1000, self.setup_game)
         else:
             self.ball.update()
-            # FPS ditingkatkan dengan memperkecil jeda loop dari 20ms ke 15ms (~67 FPS)
-            self.after(15, self.game_loop)
+            # Jeda 12ms memberikan animasi tinggi (~80 FPS) yang sangat halus
+            self.after(12, self.game_loop)
 
     def check_collisions(self):
         ball_coords = self.ball.get_position()
@@ -269,7 +310,7 @@ class Game(tk.Frame):
 
 if __name__ == '__main__':
     root = tk.Tk()
-    root.title('Modern Brick Breaker')
+    root.title('Modern Fluid Brick Breaker')
     root.resizable(False, False)
     game = Game(root)
     game.mainloop()
